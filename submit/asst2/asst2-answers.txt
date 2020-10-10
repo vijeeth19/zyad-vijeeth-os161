@@ -1,0 +1,69 @@
+Question 1: When a thread calls thread_exit(), the thread will detach from its associated process,
+then it will get added to the tail end of its cpu's zombie threadlist, and will finally change 
+its state to S_ZOMBIE. When a thread is in the S_ZOMBIE state, it will be destroyed (by thread_destroy()) in the next call of
+exorcise().
+
+When a thread sleeps it will get added to the tail end of some given wait channel, then it will change
+state to S_SLEEP. Once the thread is in the S_SLEEP state, it is ready to be awaken by a call to
+wchan_wakeone() or wchan_wakeall() on the same given wait channel it was added to the tail of.
+
+
+Question 2: The function that handles the high level machine independent context switch would be
+thread_switch() in ~/os161/src/kern/thread/thread.c line 560. 
+The function that handles the assembler-level context switch would be switchframe_switch() in
+~/os161/src/kern/arch/mips/thread/switch.S line 42.
+
+
+Question 3: If a thread is in the S_RUN state, it is currently running.
+If a thread is in the S_READY state, it is ready to run but not currently running.
+If a thread is in the S_SLEEP state, it is currently sleeping in a wait channel.
+If a thread is in the S_ZOMBIE state, thread_exit() has been called on the thread but it is not yet deleted (exorcise() has not been called).
+
+
+Question 4: Turning interrupts off on a processor means interrupts are ignored and do not transfer control to the interrupt handler, this includes ignoring the timer interrupts
+which perform automatic context switches. 
+Turning interrupts off is accomplished by calling the function splhigh() in ~/os161/src/kern/include/spl.h line 103.
+It is important to turn interrupts off in the thread subsystem code because the functions should be performed atomically, or else data could be corrupted in the event of a context switch 
+during thread_switch(), or thread_exit().
+
+
+Question 5: When thread X wakes up a sleeping thread Y, thread Y is removed from the head of the wait channel it is stored in, and it is made 
+runnable by changing thread Y's state to S_READY and adding thread Y to the tail of thread Y's cpu runqueue.
+
+A sleeping thread Y runs again after the waking up process listed above, then thread Y will run once it reaches the head of it's cpu runqueue
+and thread_switch() is called.
+
+
+Question 6: (all the functions listed below are in ~/os161/src/kern/thread/thread.c)
+The function thread_switch() (line 560) switches to the next thread in the the current cpu's runqueue. 
+The function(s) thread_make_runnable() (line 450), schedule() (line 820), thread_consider_migration() (line 846) determines potentially which threads will run next.
+
+
+Question 7: thread_switch() picks the next thread to run from the head of the current cpu's runqueue, and context switches to this thread.
+thread_make_runnable() adds a thread to run to the tail of the current cpu's runqueue, which may be the next thread to run during thread_switch().
+schedule() could reshuffle the current cpu's runqueue by job priority (but does not in the current version of OS161), and may introduce some thread to the head of the runqueue.
+thread_consider_migration() could add a thread to the tail of the current cpu's runqueue from another cpu's runqueue, which may be the next thread to run during thread_switch().
+
+
+Question 8: The hardware timer's role in scheduling is calling thread_consider_migration() every 16 hardclocks, 
+calling schedule() every 4 hardclocks, and finally calling thread_yield() every hardclock.
+(A hardclock is simply a call of the function hardclock())
+
+The hardware independent function called on a timer interrupt is the hardclock() function in ~/os161/src/kern/thread/clock.c line 93.
+
+
+Question 9: wchan_sleep() and wchan_wakeone() are used to implement semaphores by:  
+
+wchan_sleep() is used to implement the blocking of the thread that calls P() on a semaphore with a sem_count of 0. 
+This is achieved by placing the thread on the tail of the semaphore's associated wait channel, and then changing the
+thread's state to S_SLEEP.
+
+wchan_wakeone() is used during V() to implement waking up a thread that is waiting for sem_count to be incremented from 0. 
+This is achieved by making the thread at the head of the semaphore's associated wait channel runnable.
+
+
+Question 10: The implementation of wchan ensures a thread never misses a wakeup signal by only releasing the
+wait channel's associated spinlock after the thread that called wchan_sleep() is inserted into the wait channel queue.
+Therefore when the code that calls wchan_wakeone()/wchan_wakeall() is trying to acquire the wait channel's associated spinlock,
+this can only be done after the thread that called wchan_sleep() beforehand has been inserted into the wait channel.
+
