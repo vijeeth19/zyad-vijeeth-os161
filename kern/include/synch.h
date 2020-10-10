@@ -74,10 +74,12 @@ void V(struct semaphore *);
  */
 struct lock {
         char *lk_name;
-	struct wchan* lk_wchan; // queue for threads attempting to acquire a held lock.
-	struct spinlock lk_lock; // spinlock to make functions atomic
-        struct thread* locked_thread; // points to current thread holding the lock, NULL if no thread is holding lock.
-        volatile bool locked; // if lock is acquired locked == true, false otherwise.
+	struct thread volatile *lk_holder;
+	struct spinlock lk_lock;
+	struct wchan *lk_wchan;
+
+        // add what you need here
+        // (don't forget to mark things volatile as needed)
 };
 
 struct lock *lock_create(const char *name);
@@ -115,8 +117,12 @@ bool lock_do_i_hold(struct lock *);
 
 struct cv {
         char *cv_name;
-        struct spinlock cv_lk;
-        struct wchan* cv_wchan;
+
+	struct wchan *cv_wchan;
+	struct spinlock cv_lock;
+
+        // add what you need here
+        // (don't forget to mark things volatile as needed)
 };
 
 struct cv *cv_create(const char *name);
