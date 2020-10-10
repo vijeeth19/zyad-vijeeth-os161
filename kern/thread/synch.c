@@ -138,9 +138,6 @@ V(struct semaphore *sem)
 //
 // Lock.
 
-/*
- * Constructor for 'struct lock'
- */
 struct lock *
 lock_create(const char *name)
 {
@@ -157,6 +154,8 @@ lock_create(const char *name)
                 return NULL;
         }
 
+        // add stuff here as needed
+
 	lock->lk_wchan = wchan_create(lock->lk_name);
 	if (lock->lk_wchan == NULL) {
 		kfree(lock->lk_name);
@@ -165,102 +164,87 @@ lock_create(const char *name)
 	}
 
 	spinlock_init(&lock->lk_lock);
-        lock->locked = false;
-        lock->locked_thread = NULL;
+
+	//This is the lock status variable that shows the thread that holds the lock
+        lock->lk_holder = NULL;  
 
         return lock;
 }
 
-/*
- * Destructor for 'struct lock'
- */
 void
 lock_destroy(struct lock *lock)
 {
         KASSERT(lock != NULL);
 
-        spinlock_cleanup(&lock->lk_lock);
-        wchan_destroy(lock->lk_wchan);
+        // add stuff here as needed
+
+	spinlock_cleanup(&lock->lk_lock);
+	wchan_destroy(lock->lk_wchan);
+
         kfree(lock->lk_name);
         kfree(lock);
 }
 
-/*
- * Get the lock.
- * 
- * Only one thread can hold the lock at the same time.
- * Uses a spinlock to make the operation atomic.
- * 
- * A thread trying to acquire the lock when the lock is already held will result in the thread being placed in a wait channel,
- * and will change state to S_SLEEP.
- * 
- * A thread will be released from the wait channel when lock_release() is called and the thread is at the head of the wait channel.
- */
 void
 lock_acquire(struct lock *lock)
 {
+
+        
+	KASSERT(lock != NULL);
+
+        /* Make sure that the code isn't in an interrupt handler. */
+        KASSERT(curthread->t_in_interrupt == false);
+
+	/* Use the lock's spinlock to protect the wchan as well. */
 	spinlock_acquire(&lock->lk_lock);
-        /*
-         * May not block in an interrupt handler.
-         *
-         * For robustness, always check, even if we can actually
-         * complete lock_acquire() without blocking.
-         */
-        KASSERT(lock != NULL && curthread->t_in_interrupt == false);
-
-        /* panic if deadlock occurs */
-        if(lock->locked_thread == curthread){
-                panic("Deadlock on lock %s in thread %d\n", lock->lk_name, (int) curthread);
-        }
-        while (lock->locked == true){
-                /* Store current thread in wait channel, then release spinlock */
+        while (lock->lk_holder != NULL) {
+		/* If some thread is holding the lock, then sleep until being woken up by wchan_wakeone. */
 		wchan_sleep(lock->lk_wchan, &lock->lk_lock);
+
         }
 
-        /* Lock must have been released at this point */
-        KASSERT(lock->locked == false && lock->locked_thread == NULL);
+	/* Make sure that no thread is holding the lock. */
+        KASSERT(lock->lk_holder == NULL);
 
-        lock->locked_thread = curthread;
-        lock->locked = true; 
+	/*Assign the lock holder status to the current thread, as the current thread will acquire the lock. */
+        lock->lk_holder = curthread;
 	spinlock_release(&lock->lk_lock);
 
 }
 
-/*
- * Free the lock.
- * 
- * Only the thread holding the lock may do this.
- * Uses a spinlock to make the operation atomic.
- * Wakes the thread that is placed at the top of the wait channel in trying to acquire the lock. 
- */
 void
 lock_release(struct lock *lock)
 {
-        KASSERT(lock != NULL);
+        // Write this
 
+	KASSERT(lock != NULL);
 
-        spinlock_acquire(&lock->lk_lock);
+	spinlock_acquire(&lock->lk_lock);
 
-        /* Ensure the thread releasing the lock also holds the lock */
-        KASSERT(lock_do_i_hold(lock) == true);
+	/*
+	 * As required, lock_aquire, lock_release, and lock_do_i_hold should be atomic
+	 * So lock_do_i_hold can be called from a critical section (after spinlock_acquire and before spinlock_release) to make it atomic
+	 *
+	 * Furthermore, the following ensures that the thread that wishes to lock_release must hold the lock in the first place
+	 */
+	KASSERT(lock_do_i_hold(lock));
 
+        lock->lk_holder = NULL;
+        KASSERT(lock->lk_holder != curthread);
+	
+	/* Wakes the threads that are waiting through wchan_sleep. */
+	wchan_wakeone(lock->lk_wchan, &lock->lk_lock);
 
-        lock->locked = false;
-        lock->locked_thread = NULL;
+	spinlock_release(&lock->lk_lock);
 
-        /* make the thread at the top of the wait channel runnable */
-        wchan_wakeone(lock->lk_wchan, &lock->lk_lock);
-        spinlock_release(&lock->lk_lock);
 }
 
-/*
- * Returns true if the current thread holds the lock, false otherwise.
- */
 bool
 lock_do_i_hold(struct lock *lock)
 {
-	/* Assume we can read locked_thread atomically enough for this to work */
-        return lock->locked_thread == curthread;
+
+        return (lock->lk_holder == curthread);
+
 }
 
 ////////////////////////////////////////////////////////////
@@ -268,9 +252,6 @@ lock_do_i_hold(struct lock *lock)
 // CV
 
 
-/*
- * Constructor for 'struct cv'
- */
 struct cv *
 cv_create(const char *name)
 {
@@ -287,79 +268,100 @@ cv_create(const char *name)
                 return NULL;
         }
 
-        cv->cv_wchan = wchan_create(cv->cv_name);
-        if(cv->cv_wchan == NULL){
-                kfree(cv->cv_name);
-                kfree(cv);
-                return NULL;
-        }
+        // add stuff here as needed
 
-        spinlock_init(&cv->cv_lk);
+
+	cv->cv_wchan = wchan_create(cv->cv_name);
+	if (cv->cv_wchan == NULL) {
+		kfree(cv->cv_name);
+		kfree(cv);
+		return NULL;
+	}
+
+	spinlock_init(&cv->cv_lock);
+
+
         return cv;
 }
 
-/*
- * Destructor for 'struct cv'
- */
 void
 cv_destroy(struct cv *cv)
 {
         KASSERT(cv != NULL);
 
-        spinlock_cleanup(&cv->cv_lk);
-        wchan_destroy(cv->cv_wchan);
+        // add stuff here as needed
+
+	spinlock_cleanup(&cv->cv_lock);
+	wchan_destroy(cv->cv_wchan);
+
         kfree(cv->cv_name);
         kfree(cv);
 }
 
-/*
- * Waits on a signal or broadcast of this CV.
- * 
- * Uses a spinlock to make the operation atomic.
- * Releases the supplied lock, goes to sleep, then acquires the lock once signaled. 
- */
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
-        spinlock_acquire(&cv->cv_lk);
 
-        /* release lock before blocking the thread, this also checks if this current thread holds the lock implicitly */
-        lock_release(lock);
+        
+	KASSERT(cv != NULL);
 
-        /* sleep until awaken by cv_signal() or cv_broadcast() */
-        wchan_sleep(cv->cv_wchan, &cv->cv_lk);
-        spinlock_release(&cv->cv_lk);
-        lock_acquire(lock);
+	KASSERT(lock != NULL);
+	
+	/* Make sure that the current thread holds the lock parameter. */	
+	KASSERT(lock_do_i_hold(lock));
+
+	spinlock_acquire(&cv->cv_lock);
+
+	lock_release(lock);
+
+	wchan_sleep(cv->cv_wchan, &cv->cv_lock);
+
+	/*
+	 * cv->cv_lock was acquired at the end of the wchan_sleep function. 
+	 * Now the cv->cv_lock is released.
+	 */
+	spinlock_release(&cv->cv_lock);
+	
+	lock_acquire(lock);
+
 }
 
-/*
- * Wakes up one thread that is sleeping on this CV.
- * 
- * Uses a spinlock to make the operation atomic.
- */
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-        spinlock_acquire(&cv->cv_lk);
-        KASSERT(lock_do_i_hold(lock) == true);
 
-        /* make the thread at the head of the wait channel runnable */
-        wchan_wakeone(cv->cv_wchan, &cv->cv_lk);
-        spinlock_release(&cv->cv_lk);
+	KASSERT(cv != NULL);
+
+	KASSERT(lock != NULL);
+	
+	/* Make sure that the current thread holds the lock parameter. */	
+	KASSERT(lock_do_i_hold(lock));
+
+	spinlock_acquire(&cv->cv_lock);
+	
+	/* Inside a critical section created by spinlock_acquire annd spinlock_release. */
+	wchan_wakeone(cv->cv_wchan, &cv->cv_lock);
+
+	spinlock_release(&cv->cv_lock);
+
 }
 
-/*
- * Wakes up all threads sleeping on this CV.
- * 
- * Uses a spinlock to make the operation atomic.
- */
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-        spinlock_acquire(&cv->cv_lk);
-        KASSERT(lock_do_i_hold(lock) == true);
 
-        /* make all threads in the wait channel runnable */
-        wchan_wakeall(cv->cv_wchan, &cv->cv_lk);
-        spinlock_release(&cv->cv_lk);
+	KASSERT(cv != NULL);
+
+	KASSERT(lock != NULL);
+	
+	/* Make sure that the current thread holds the lock parameter. */	
+	KASSERT(lock_do_i_hold(lock));
+
+	spinlock_acquire(&cv->cv_lock);
+
+	/* Inside a critical section created by spinlock_acquire annd spinlock_release. */
+	wchan_wakeall(cv->cv_wchan, &cv->cv_lock);
+
+	spinlock_release(&cv->cv_lock);
+
 }
